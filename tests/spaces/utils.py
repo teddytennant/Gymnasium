@@ -155,6 +155,8 @@ TESTING_COMPOSITE_SPACES = [
     # OneOf spaces
     OneOf([Discrete(3), Box(low=0.0, high=1.0)]),
     OneOf([MultiBinary(2), MultiDiscrete([2, 2])]),
+    OneOf([Box(-1, 1, shape=(2,)), Box(-1, 1, shape=(3,))]),
+    OneOf([Text(5), Discrete(3)]),
 ]
 TESTING_COMPOSITE_SPACES_IDS = [f"{space}" for space in TESTING_COMPOSITE_SPACES]
 

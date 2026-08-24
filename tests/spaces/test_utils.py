@@ -4,7 +4,17 @@ import numpy as np
 import pytest
 
 import gymnasium as gym
-from gymnasium.spaces import Box, Graph, Sequence, utils
+from gymnasium.spaces import (
+    Box,
+    Discrete,
+    Graph,
+    MultiBinary,
+    OneOf,
+    Sequence,
+    Text,
+    Tuple,
+    utils,
+)
 from gymnasium.spaces.utils import is_space_dtype_shape_equiv
 from gymnasium.utils.env_checker import data_equivalence
 from gymnasium.vector.utils import (
@@ -86,6 +96,8 @@ TESTING_SPACES_EXPECTED_FLATDIMS = [
     # OneOf
     4,
     5,
+    4,
+    6,
 ]
 assert len(TESTING_SPACES) == len(TESTING_SPACES_EXPECTED_FLATDIMS)
 
@@ -176,6 +188,56 @@ def test_flatten_roundtripping(space):
 
     for original, roundtripped in zip(samples, unflattened_samples, strict=True):
         assert data_equivalence(original, roundtripped)
+
+
+TESTING_ONEOF_SPACES = [
+    OneOf([Box(-1, 1, shape=(2,)), Box(-1, 1, shape=(3,))]),
+    OneOf([MultiBinary(3), MultiBinary([2, 2])]),
+    OneOf([Discrete(3), Discrete(5, start=-2)]),
+    OneOf([Discrete(3), Box(-1, 1, shape=(2,))]),
+    OneOf([Text(5), Box(-1, 1, shape=(4,))]),
+    OneOf([OneOf([Discrete(2), MultiBinary(3)]), Box(-1, 1, shape=(4,))]),
+    Tuple([OneOf([Box(-1, 1, shape=(2,)), Box(-1, 1, shape=(3,))]), Box(0, 1)]),
+]
+TESTING_ONEOF_SPACES_IDS = [
+    "float32-boxes",
+    "int8-multi-binary",
+    "discrete",
+    "mixed-dtypes",
+    "text",
+    "nested-oneof",
+    "tuple-of-oneof",
+]
+
+
+@pytest.mark.parametrize("space", TESTING_ONEOF_SPACES, ids=TESTING_ONEOF_SPACES_IDS)
+def test_oneof_flatten_dtype(space):
+    """Tests that flattening a `OneOf` sample agrees with the flattened `OneOf` space.
+
+    The subspace index is prepended to the flattened subspace sample, therefore it must
+    not promote the sample's dtype, otherwise the flattened sample is not contained
+    within the flattened space.
+    """
+    flat_space = utils.flatten_space(space)
+    space.seed(123)
+
+    for _ in range(10):
+        flat_sample = utils.flatten(space, space.sample())
+
+        assert flat_sample.dtype == flat_space.dtype
+        assert flat_sample in flat_space
+
+
+@pytest.mark.parametrize("space", TESTING_ONEOF_SPACES, ids=TESTING_ONEOF_SPACES_IDS)
+def test_oneof_flatten_roundtripping(space):
+    """Tests that unflattening a flattened `OneOf` sample recovers the subspace index and sample."""
+    space.seed(123)
+
+    for _ in range(10):
+        sample = space.sample()
+        roundtripped = utils.unflatten(space, utils.flatten(space, sample))
+
+        assert data_equivalence(sample, roundtripped)
 
 
 @pytest.mark.parametrize(

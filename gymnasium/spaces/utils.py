@@ -266,6 +266,22 @@ def _flatten_sequence(
         return tuple(flatten(space.feature_space, item) for item in x)
 
 
+def _oneof_flat_dtype(space: OneOf) -> np.dtype:
+    """Returns the dtype shared by ``flatten`` and ``flatten_space`` for a ``OneOf`` space.
+
+    The dtype is the promotion of the dtypes of the *flattened* subspaces rather than of
+    the subspaces themselves, as flattening can change the dtype of a space, for example,
+    :class:`gymnasium.spaces.Text` flattens to an ``int32`` :class:`gymnasium.spaces.Box`.
+
+    Args:
+        space: The ``OneOf`` space to compute the flattened dtype of
+
+    Returns:
+        The dtype of the ``Box`` that the space flattens to.
+    """
+    return np.result_type(*(flatten_space(subspace).dtype for subspace in space.spaces))
+
+
 @flatten.register(OneOf)
 def _flatten_oneof(space: OneOf, x: tuple[int, Any]) -> NDArray[Any]:
     idx, sample = x
@@ -279,7 +295,12 @@ def _flatten_oneof(space: OneOf, x: tuple[int, Any]) -> NDArray[Any]:
         )
         flat_sample = np.concatenate([flat_sample, padding])
 
-    return np.concatenate([[idx], flat_sample])
+    # The index must not promote the dtype of the sample, otherwise the flattened
+    # sample would not be contained within `flatten_space(space)`.
+    dtype = _oneof_flat_dtype(space)
+    return np.concatenate(
+        [np.array([idx], dtype=dtype), flat_sample.astype(dtype, copy=False)]
+    )
 
 
 @singledispatch
@@ -451,7 +472,8 @@ def _unflatten_oneof(space: OneOf, x: NDArray[Any]) -> tuple[int, Any]:
     sub_space = space.spaces[idx]
 
     original_size = flatdim(sub_space)
-    trimmed_sample = x[1 : 1 + original_size]
+    # Restore the subspace's own flattened dtype, `x` uses the dtype shared by all subspaces
+    trimmed_sample = x[1 : 1 + original_size].astype(flatten_space(sub_space).dtype)
 
     return idx, unflatten(sub_space, trimmed_sample)
 
@@ -597,7 +619,7 @@ def _flatten_space_oneof(space: OneOf) -> Box:
     low = np.concatenate([[0], np.full(max_flatdim - 1, overall_low)])
     high = np.concatenate([[num_subspaces - 1], np.full(max_flatdim - 1, overall_high)])
 
-    dtype = np.result_type(*[s.dtype for s in space.spaces if hasattr(s, "dtype")])
+    dtype = _oneof_flat_dtype(space)
     return Box(low=low, high=high, shape=(max_flatdim,), dtype=dtype)
 
 
